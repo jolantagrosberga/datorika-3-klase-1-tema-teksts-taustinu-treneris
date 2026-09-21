@@ -29,6 +29,9 @@ h1{font-size:26px;color:#1F4E79}
 .pill.on{background:#1F4E79;color:#fff}
 .pill.lvl{border-color:#C75000;color:#C75000}
 .pill.lvl.on{background:#C75000;color:#fff}
+.pill.lvl.lock{border-color:#c5ccd6;color:#9aa4b2;background:#f4f6f9;cursor:not-allowed}
+.pill.lvl.done{border-color:#2e7d32;color:#2e7d32}
+.pill.lvl.done.on{background:#2e7d32;color:#fff}
 .lbl{font-size:13px;color:#8a93a3}
 .target{font-size:40px;text-align:center;padding:18px 26px;margin-top:18px;
         background:#f7f9fc;border:2px dashed #c8d4e6;border-radius:16px;height:142px;
@@ -190,21 +193,38 @@ let theme = "Rudens", level = "viegls", list = [], idx = 0, pos = 0, typed = [],
 
 const $ = id => document.getElementById(id);
 
+const LEVEL_ORDER = [["viegls","Viegls"],["vidējs","Vidējs"],["grūts","Grūts"]];
+const progress = {};
+Object.keys(DATA).forEach(t=>progress[t] = {"viegls":false, "vidējs":false, "grūts":false});
+
+function unlocked(lv){
+  const p = progress[theme];
+  if(lv === "viegls") return true;
+  if(lv === "vidējs") return p["viegls"];
+  return p["vidējs"];
+}
+function nextLevel(lv){ return lv === "viegls" ? "vidējs" : lv === "vidējs" ? "grūts" : null; }
+
 function buildPills(){
   $("themes").innerHTML = "";
   Object.keys(DATA).forEach(t=>{
     const b = document.createElement("button");
+    const p = progress[t];
     b.className = "pill" + (t===theme?" on":"");
-    b.textContent = t;
-    b.onclick = ()=>{ theme = t; start(); };
+    b.textContent = t + (p["viegls"] && p["vidējs"] && p["grūts"] ? " ✓" : "");
+    b.onclick = ()=>{ theme = t; level = "viegls"; start(); };
     $("themes").appendChild(b);
   });
   $("levels").innerHTML = "";
-  [["viegls","Viegls"],["vidējs","Vidējs"],["grūts","Grūts"]].forEach(l=>{
+  LEVEL_ORDER.forEach(l=>{
     const b = document.createElement("button");
-    b.className = "pill lvl" + (l[0]===level?" on":"");
-    b.textContent = l[1];
-    b.onclick = ()=>{ level = l[0]; start(); };
+    const open = unlocked(l[0]), done = progress[theme][l[0]];
+    b.className = "pill lvl" + (done ? " done" : "") + (!open ? " lock" : "") + (l[0]===level ? " on" : "");
+    b.textContent = (open ? "" : "🔒 ") + l[1] + (done ? " ✓" : "");
+    b.onclick = ()=>{
+      if(!open){ $("hint").textContent = "Vispirms izpildi iepriekšējo līmeni."; return; }
+      level = l[0]; start();
+    };
     $("levels").appendChild(b);
   });
 }
@@ -242,6 +262,11 @@ function start(){
   $("sTime").textContent = "0:00";
   $("statTime").classList.toggle("hide", level !== "grūts");
   buildPills(); loadWord(); updateStats();
+}
+
+function goNext(){
+  const nx = nextLevel(level);
+  if(nx && unlocked(nx)){ level = nx; start(); }
 }
 
 function loadWord(){ pos = 0; typed = []; errNow = false; deadPending = false; locked = false; render(); }
@@ -339,8 +364,13 @@ document.addEventListener("keydown", e=>{
         clearInterval(timer);
         let extra = "";
         if(level === "grūts" && t0) extra = " Tavs laiks: " + fmt(Math.floor((Date.now()-t0)/1000)) + ".";
-        $("done").innerHTML = "Lieliski! Visi vārdi uzrakstīti." + extra +
-          "<button onclick='start()'>Sākt no jauna</button>";
+        progress[theme][level] = true;
+        const nx = nextLevel(level);
+        buildPills();
+        $("done").innerHTML = "Lieliski! Līmenis izpildīts." + extra +
+          (nx ? "<button onclick='goNext()'>Nākamais līmenis &#8594;</button>"
+              : " Visi trīs līmeņi šajā tēmā izpildīti — izvēlies citu tēmu!") +
+          "<button onclick='start()' style='background:#1F4E79'>Atkārtot</button>";
         $("target").innerHTML = ""; $("bar").style.width = "100%"; $("hint").textContent = "";
         clearKeys();
         return;
