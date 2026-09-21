@@ -184,6 +184,7 @@ const ROWS = [
 ];
 const DIACRITIC = {"ā":"a","č":"c","ē":"e","ģ":"g","ī":"i","ķ":"k","ļ":"l","ņ":"n","š":"s","ū":"u","ž":"z"};
 
+let errNow = false, deadPending = false, locked = false;
 let theme = "Rudens", level = "viegls", list = [], idx = 0, pos = 0, typed = [],
     hits = 0, miss = 0, doneCount = 0, t0 = null, timer = null;
 
@@ -243,7 +244,7 @@ function start(){
   buildPills(); loadWord(); updateStats();
 }
 
-function loadWord(){ pos = 0; typed = []; render(); }
+function loadWord(){ pos = 0; typed = []; errNow = false; deadPending = false; locked = false; render(); }
 
 function render(){
   const word = list[idx] || "";
@@ -251,8 +252,8 @@ function render(){
   for(let i=0;i<word.length;i++){
     const s = document.createElement("span");
     s.textContent = word[i] === " " ? "␣" : word[i];
-    if(i < pos) s.className = typed[i] ? "ok" : "bad";
-    else if(i === pos) s.className = "cur";
+    if(i < pos) s.className = "ok";
+    else if(i === pos) s.className = errNow ? "bad cur" : "cur";
     t.appendChild(s);
   }
   $("bar").style.width = (idx/list.length*100) + "%";
@@ -293,37 +294,75 @@ function updateStats(){
 function fmt(s){ return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); }
 function tick(){ if(t0) $("sTime").textContent = fmt(Math.floor((Date.now()-t0)/1000)); }
 
+const DEAD_KEYS = ["Dead", "'", "´", "`", "\u0027"];
+
 document.addEventListener("keydown", e=>{
   if(e.ctrlKey || e.metaKey || e.altKey) return;
+  if(e.repeat) { e.preventDefault(); return; }          // turēts taustiņš netiek skaitīts vairākkārt
+  if(locked) { e.preventDefault(); return; }            // pauze starp vārdiem
   const word = list[idx]; if(!word) return;
-  if(e.key === "Backspace"){ if(pos>0){ pos--; typed.pop(); render(); } e.preventDefault(); return; }
-  if(e.key.length !== 1) return;
+  if(e.key === "Backspace"){ e.preventDefault(); return; }
+
+  const expected = word[pos];
+  const expLow = expected.toLowerCase();
+  const expDiac = DIACRITIC[expLow];                   // bāzes burts, ja gaidām garumzīmi/mīkstinājumu
+
+  // Ķepiņu taustiņš: dažās klaviatūrās tas ir "Dead", citās uzreiz dod apostrofu.
+  if(DEAD_KEYS.indexOf(e.key) >= 0){
+    e.preventDefault();
+    if(expDiac){
+      deadPending = true;
+      $("hint").textContent = "Labi! Tagad spied " + (expected === expected.toUpperCase() ? "Shift + " : "") + expDiac.toUpperCase();
+    }
+    return;
+  }
+  if(e.key.length !== 1 && e.key.normalize("NFC").length !== 1) return;
   e.preventDefault();
 
   if(level === "grūts" && !t0){ t0 = Date.now(); timer = setInterval(tick, 500); }
 
-  const ok = e.key === word[pos];
-  typed.push(ok); if(ok) hits++; else miss++;
-  pos++;
+  const k = e.key.normalize("NFC");
+  let ok = (k === expected);
 
-  if(pos >= word.length){
-    doneCount++; idx++; updateStats();
-    if(idx >= list.length){
-      clearInterval(timer);
-      let extra = "";
-      if(level === "grūts" && t0) extra = " Tavs laiks: " + fmt(Math.floor((Date.now()-t0)/1000)) + ".";
-      $("done").innerHTML = "Lieliski! Visi vārdi uzrakstīti." + extra +
-        "<button onclick='start()'>Sākt no jauna</button>";
-      $("target").innerHTML = ""; $("bar").style.width = "100%"; $("hint").textContent = "";
-      clearKeys();
+  // Ja klaviatūra neapvieno ķepiņu ar burtu, pieņemam: ķepiņa + pareizais bāzes burts
+  if(!ok && deadPending && expDiac){
+    const upperOk = (expected === expLow) ? (k === expDiac) : (k === expDiac.toUpperCase());
+    if(upperOk) ok = true;
+  }
+  deadPending = false;
+
+  if(ok){
+    hits++; errNow = false; pos++;
+    if(pos >= word.length){
+      doneCount++; idx++; updateStats();
+      if(idx >= list.length){
+        clearInterval(timer);
+        let extra = "";
+        if(level === "grūts" && t0) extra = " Tavs laiks: " + fmt(Math.floor((Date.now()-t0)/1000)) + ".";
+        $("done").innerHTML = "Lieliski! Visi vārdi uzrakstīti." + extra +
+          "<button onclick='start()'>Sākt no jauna</button>";
+        $("target").innerHTML = ""; $("bar").style.width = "100%"; $("hint").textContent = "";
+        clearKeys();
+        return;
+      }
+      locked = true;                                    // kamēr nāk nākamais vārds, taustiņi netiek skaitīti
+      pos = word.length;
+      const t = $("target");
+      [...t.children].forEach(sp=>sp.className = "ok");
+      setTimeout(loadWord, 350);
       return;
     }
-    setTimeout(loadWord, 320);
-    render();
+    updateStats(); render();
     return;
   }
-  updateStats();
-  render();
+
+  // Kļūda: burts paliek sarkans, līdz ievada pareizo
+  miss++; errNow = true;
+  updateStats(); render();
+  if(e.getModifierState && e.getModifierState("CapsLock") && k.toLowerCase() === expLow)
+    $("hint").textContent = "Ieslēgts Caps Lock! Izslēdz to un mēģini vēlreiz.";
+  else
+    $("hint").textContent = "Nepareizs taustiņš — spied iekrāsoto taustiņu.";
 });
 
 buildKeyboard();
