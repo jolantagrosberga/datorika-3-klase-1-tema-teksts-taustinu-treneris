@@ -198,6 +198,7 @@ const progress = {};
 Object.keys(DATA).forEach(t=>progress[t] = {"viegls":false, "vidējs":false, "grūts":false});
 
 function unlocked(lv){
+  if(typeof teacher !== "undefined" && teacher) return true;
   const p = progress[theme];
   if(lv === "viegls") return true;
   if(lv === "vidējs") return p["viegls"];
@@ -398,6 +399,24 @@ document.addEventListener("keydown", e=>{
 buildKeyboard();
 start();
 fit();
+
+/* ---- Skolotāja režīms: Ctrl + Shift + L atbloķē visus līmeņus (atkārtoti — atkal bloķē) ---- */
+var teacher = false;
+(function(){
+  const badge = document.createElement("div");
+  badge.textContent = "Skolotāja režīms";
+  badge.style.cssText = "position:fixed;left:8px;bottom:6px;font:12px Candara,Aptos,sans-serif;" +
+    "color:#fff;background:rgba(31,78,121,.75);padding:3px 9px;border-radius:999px;z-index:9999;display:none";
+  document.body.appendChild(badge);
+  document.addEventListener("keydown", e=>{
+    if(e.ctrlKey && e.shiftKey && (e.code === "KeyL" || e.key.toLowerCase() === "l")){
+      e.preventDefault(); e.stopImmediatePropagation();
+      teacher = !teacher;
+      badge.style.display = teacher ? "block" : "none";
+      if(typeof buildPills === "function") buildPills();
+    }
+  }, true);
+})();
 </script>
 </body>
 </html>
